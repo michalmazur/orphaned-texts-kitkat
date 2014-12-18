@@ -5,16 +5,14 @@ android {
     buildToolsVersion '20.0.0'
 
     defaultConfig {
-        applicationId "com.michalmazur.orphanedtexts"
-        minSdkVersion 7
+        applicationId "com.michalmazur.orphanedtexts.kitkat"
+        minSdkVersion 19
         targetSdkVersion 19
-        versionCode 19
-        versionName "1.4.2"
+        versionCode 1
+        versionName "2.0"
     }
     buildTypes {
         release {
-            runProguard false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
 }

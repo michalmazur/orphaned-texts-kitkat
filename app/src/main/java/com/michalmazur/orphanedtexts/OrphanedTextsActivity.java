@@ -8,6 +8,7 @@ import java.util.List;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
+import android.content.ContentValues;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -17,6 +18,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.ContactsContract.PhoneLookup;
+import android.provider.Telephony;
 import android.util.Log;
 import android.view.Menu;
 import android.view.MenuInflater;
@@ -37,6 +39,8 @@ public class OrphanedTextsActivity extends Activity {
     private static final String PREFS_NAME = "preferences";
     private static final String DATABASE_LAST_EMPTIED = "database_last_emptied";
     private boolean isMenuEnabled = true;
+    private String defaultSmsApp;
+    private int totalOrphanedTexts = 0;
 
     public OrphanedTextsActivity() {
         super();
@@ -50,7 +54,27 @@ public class OrphanedTextsActivity extends Activity {
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        announceKitKatSupport();
+        if (isDefaultApp()) {
+            AlertDialog ad = new AlertDialog.Builder(this).create();
+            ad.setMessage("Please set a different app as the default messaging app, then restart Orphaned Texts.");
+            ad.setButton("OK", new DialogInterface.OnClickListener() {
+                @Override
+                public void onClick(DialogInterface dialog, int which) {
+                    finish();
+                }
+            });
+            ad.show();
+        }
+
+        addRecord();
+
+        // Query the current default SMS app's package name and save it.
+        defaultSmsApp = Telephony.Sms.getDefaultSmsPackage(this.getApplicationContext());
+
+        displayAlertDialog("Thanks for trying out Orphaned Texts Beta for KitKat. \n\nIMPORTANT: " +
+                "Due to changes in Android, Orphaned Texts has to be set as the default messaging app to delete orphaned texts. " +
+                "You will be prompted to set Orphaned Texts as your default messaging app before you try to delete any orphaned texts. " +
+                "You will also be prompted to restore your original messaging app after deleting.");
 
         try {
             orphans = getSmsReader().getOrphans();
@@ -66,24 +90,17 @@ public class OrphanedTextsActivity extends Activity {
         }
     }
 
-    public void announceKitKatSupport() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
-
-            AlertDialog ad = new Builder(this).create();
-            ad.setMessage(getString(R.string.kitkat_announcement));
-            ad.setButton("OK", new DialogInterface.OnClickListener() {
-                @Override
-                public void onClick(DialogInterface dialog, int which) {
-                    dialog.dismiss();
-                    try {
-                        startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(getString(R.string.kitkat_market_uri))));
-                    } catch (ActivityNotFoundException e) {
-                        startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(getString(R.string.kitkat_web_uri))));
-                    }
-                }
-            });
-            ad.show();
-        }
+    public void addRecord()
+    {
+        ContentValues cv = new ContentValues();
+        cv.put("date", "1358849084000");
+        cv.put("reference_number", 42);
+        cv.put("count", 1);
+        cv.put("sequence",	5);
+        cv.put("destination_port", 10);
+        cv.put("address", "+481234567890");
+        cv.put("pdu", "07911326040000F0040B911346610089F60000208062917314080CC8F71D14969741F977FD07");
+        getContentResolver().insert(uri, cv);
     }
 
     @Override
@@ -122,7 +139,8 @@ public class OrphanedTextsActivity extends Activity {
             map.put("message", o.getMessageBody());
             items.add(map);
         }
-        Log.d("COUNT", String.valueOf(items.size()));
+        totalOrphanedTexts = items.size();
+        Log.d("COUNT", String.valueOf(totalOrphanedTexts));
 
         ((TextView) findViewById(R.id.count)).setText("Total number of orphaned texts: "
                 + items.size());
@@ -162,10 +180,31 @@ public class OrphanedTextsActivity extends Activity {
     }
 
     public void deleteAllRecords() {
-        int deletedRecords = getContentResolver().delete(uri, null, null);
-        Toast.makeText(this, String.valueOf(deletedRecords) + " orphaned texts deleted", Toast.LENGTH_SHORT).show();
-        orphans = getSmsReader().getOrphans();
-        saveDatabaseLastEmptiedPreference();
+        if (totalOrphanedTexts == 0) {
+            displayAlertDialog("There are no orphaned texts to delete.");
+            return;
+        }
+
+        if (isDefaultApp()) {
+            int deletedRecords = getContentResolver().delete(uri, null, null);
+            Toast.makeText(this, String.valueOf(deletedRecords) + " orphaned texts deleted", Toast.LENGTH_SHORT).show();
+            orphans = getSmsReader().getOrphans();
+            saveDatabaseLastEmptiedPreference();
+            displayAlertDialog("Please change your default messaging app now.");
+
+            Intent intent2 = new Intent(Telephony.Sms.Intents.ACTION_CHANGE_DEFAULT);
+            intent2.putExtra(Telephony.Sms.Intents.EXTRA_PACKAGE_NAME, defaultSmsApp);
+            startActivity(intent2);
+        } else {
+            displayAlertDialog("Orphaned Texts needs to be the default messaging app to delete orphaned texts. You will be prompted to set it as the default messaging app. Then, press 'Delete All' again. ");
+            Intent intent = new Intent(Telephony.Sms.Intents.ACTION_CHANGE_DEFAULT);
+            intent.putExtra(Telephony.Sms.Intents.EXTRA_PACKAGE_NAME, this.getPackageName());
+            startActivity(intent);
+        }
+    }
+
+    private boolean isDefaultApp() {
+        return Telephony.Sms.getDefaultSmsPackage(this.getApplicationContext()).equals(this.getPackageName());
     }
 
     public void email() {
